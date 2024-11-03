@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/chaeanthony/chirpy/internal/auth"
 	"github.com/chaeanthony/chirpy/internal/database"
 	"github.com/google/uuid"
 )
@@ -94,7 +96,8 @@ type User struct {
 
 func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) {
   type parameters struct {
-		Email string `json:"email"`
+		Email 		string 		`json:"email"`
+		Password  string 		`json:"password"`
 	}
 	type response struct {
 		User
@@ -106,7 +109,12 @@ func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	user, err := cfg.db.CreateUser(r.Context(), params.Email)
+	pw, err := auth.HashPassword(params.Password)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, fmt.Errorf("failed to hash password: %v", err))
+	}
+
+	user, err := cfg.db.CreateUser(r.Context(), database.CreateUserParams{Email: params.Email, HashedPassword: pw})
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, errors.New("failed to create user"))
 		return 
@@ -120,4 +128,39 @@ func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) 
 			Email: user.Email,
 		},
 	})
+}
+
+func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
+	type parameters struct {
+		Email 		string 		`json:"email"`
+		Password  string 		`json:"password"`
+	}
+
+	params := parameters{}
+	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
+		WriteError(w, http.StatusInternalServerError, fmt.Errorf("failed to decode request. expected email, got: %v", err))
+		return
+	}
+
+	usr, err := cfg.db.GetUserByEmail(r.Context(), params.Email)
+	if errors.Is(err, sql.ErrNoRows) {
+		WriteError(w, http.StatusNotFound, errors.New("failed to find user"))
+		return 
+	} else if err != nil {
+		WriteError(w, http.StatusInternalServerError, errors.New("failed to get user"))
+		return 
+	}
+
+	if err := auth.CheckPasswordHash(params.Password, usr.HashedPassword); err != nil {
+		WriteError(w, http.StatusUnauthorized, errors.New("incorrect email or password"))
+		return 
+	}
+
+	WriteJSON(w, http.StatusOK, User{
+			ID: usr.ID,
+			CreatedAt: usr.CreatedAt,
+			UpdatedAt: usr.UpdatedAt,
+			Email: usr.Email,
+		},
+	)
 }
