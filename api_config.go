@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -19,6 +18,7 @@ type apiConfig struct {
 	fileserverHits atomic.Int32
 	db *database.Queries
 	platform string
+	jwtSecret string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -56,42 +56,12 @@ func (cfg *apiConfig) handlerReset(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (cfg *apiConfig) handlerValidateChirp(w http.ResponseWriter, r *http.Request) {
-	profane := []string{"kerfuffle", "sharbert", "fornax"}
-	cfg.fileserverHits.Add(1) 
-
-	type parameters struct {
-		Body string `json:"body"`
-	}
-	
-	params := parameters{}
-	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
-		WriteError(w, http.StatusInternalServerError, errors.New("couldn't decode request body"))
-	}
-	
-	if len(params.Body) > 140 {
-		WriteError(w, http.StatusBadRequest, errors.New("invalid request"))
-		return
-	}
-
-	words := strings.Split(params.Body, " ")
-	for i, word := range words {
-		for _, pw := range profane {
-			if strings.ToLower(word) != pw {
-				continue
-			}
-			words[i] = "****"
-		}
-	}
-
-  WriteJSON(w, http.StatusOK, map[string]string{"cleaned_body": strings.Join(words, " ")})
-}
-
 type User struct {
 	ID        uuid.UUID `json:"id"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email     string    `json:"email"`
+	Token 		string 		`json:"token"`
 }
 
 func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) {
@@ -132,8 +102,14 @@ func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) 
 
 func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 	type parameters struct {
-		Email 		string 		`json:"email"`
-		Password  string 		`json:"password"`
+		Email 			string 		`json:"email"`
+		Password  	string 		`json:"password"`
+		Expiration 	int  		`json:"expires_in_seconds"`
+	}
+
+	type response struct {
+		User
+		Token string `json:"token"`
 	}
 
 	params := parameters{}
@@ -156,11 +132,25 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 		return 
 	}
 
-	WriteJSON(w, http.StatusOK, User{
+	expiration := time.Hour
+	if params.Expiration > 0 && params.Expiration < 3600 {
+		expiration = time.Duration(params.Expiration) * time.Second
+	}
+	
+	jwt, err := auth.MakeJWT(usr.ID, cfg.jwtSecret, expiration)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, fmt.Errorf("failed to create token: %v", err))
+		return 
+	}
+
+	WriteJSON(w, http.StatusOK, response{
+		User: User{
 			ID: usr.ID,
 			CreatedAt: usr.CreatedAt,
 			UpdatedAt: usr.UpdatedAt,
 			Email: usr.Email,
 		},
+		Token: jwt,
+	},
 	)
 }

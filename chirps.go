@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/chaeanthony/chirpy/internal/auth"
 	"github.com/chaeanthony/chirpy/internal/database"
 	"github.com/google/uuid"
 )
@@ -22,11 +24,22 @@ type Chirp struct {
 func (cfg *apiConfig) handlerCreateChirp(w http.ResponseWriter, r *http.Request) {
 	type parameters struct {
 		Body 		string 		`json:"body"`
-		UserID 	uuid.UUID `json:"user_id"`
+		// UserID 	uuid.UUID `json:"user_id"`
 	}
 
 	type response struct {
 		Chirp
+	}
+
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		WriteError(w, http.StatusUnauthorized, fmt.Errorf("token required: %v", err))
+		return 
+	}
+	userId, err := auth.ValidateJWT(token, cfg.jwtSecret)
+	if err != nil {
+		WriteError(w, http.StatusUnauthorized, fmt.Errorf("invalid token: %v", err))
+		return 
 	}
 
 	params := parameters{}
@@ -35,7 +48,13 @@ func (cfg *apiConfig) handlerCreateChirp(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	chirp, err := cfg.db.CreateChirp(r.Context(), database.CreateChirpParams{Body: params.Body, UserID: params.UserID})
+	cleaned, err := validateChirp(params.Body)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	chirp, err := cfg.db.CreateChirp(r.Context(), database.CreateChirpParams{Body: cleaned, UserID: userId})
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, fmt.Errorf("failed to create chirp. got: %v", err))
 		return 
@@ -92,4 +111,32 @@ func (cfg *apiConfig) handlerGetChirp(w http.ResponseWriter, r *http.Request) {
 		Body: chirp.Body,
 		UserID: chirp.UserID,
 	})
+}
+
+
+func validateChirp(body string) (string, error) {
+	const maxChirpLength = 140
+	if len(body) > maxChirpLength {
+		return "", errors.New("Chirp is too long")
+	}
+
+	badWords := map[string]struct{}{
+		"kerfuffle": {},
+		"sharbert":  {},
+		"fornax":    {},
+	}
+	cleaned := getCleanedBody(body, badWords)
+	return cleaned, nil
+}
+
+func getCleanedBody(body string, badWords map[string]struct{}) string {
+	words := strings.Split(body, " ")
+	for i, word := range words {
+		loweredWord := strings.ToLower(word)
+		if _, ok := badWords[loweredWord]; ok {
+			words[i] = "****"
+		}
+	}
+	cleaned := strings.Join(words, " ")
+	return cleaned
 }
