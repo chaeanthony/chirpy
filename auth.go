@@ -14,11 +14,11 @@ import (
 )
 
 type User struct {
-	ID        uuid.UUID `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Email     string    `json:"email"`
-	Token     string    `json:"token"`
+	ID        	uuid.UUID `json:"id"`
+	CreatedAt 	time.Time `json:"created_at"`
+	UpdatedAt 	time.Time `json:"updated_at"`
+	Email     	string    `json:"email"`
+	IsChirpyRed bool 			`json:"is_chirpy_red"`
 }
 
 func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) {
@@ -49,10 +49,11 @@ func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) 
 
 	WriteJSON(w, http.StatusCreated, response{
 		User: User{
-			ID:        user.ID,
-			CreatedAt: user.CreatedAt,
-			UpdatedAt: user.UpdatedAt,
-			Email:     user.Email,
+			ID:        	user.ID,
+			CreatedAt: 	user.CreatedAt,
+			UpdatedAt: 	user.UpdatedAt,
+			Email:     	user.Email,
+			IsChirpyRed: user.IsChirpyRed,
 		},
 	})
 }
@@ -113,13 +114,14 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 
 	WriteJSON(w, http.StatusOK, response{
 		User: User{
-			ID:        usr.ID,
-			CreatedAt: usr.CreatedAt,
-			UpdatedAt: usr.UpdatedAt,
-			Email:     usr.Email,
+			ID:        		usr.ID,
+			CreatedAt: 		usr.CreatedAt,
+			UpdatedAt: 		usr.UpdatedAt,
+			Email:     		usr.Email,
+			IsChirpyRed: 	usr.IsChirpyRed,
 		},
-		Token:        jwt,
-		RefreshToken: refresh_token,
+		Token:        	jwt,
+		RefreshToken: 	refresh_token,
 	},
 	)
 }
@@ -181,6 +183,7 @@ func (cfg *apiConfig) handlerUpdateUser(w http.ResponseWriter, r *http.Request) 
 	}
 	type response struct {
 		User
+		Token string `json:"token"`
 	}
 
 	token, err := auth.GetBearerToken(r.Header)
@@ -222,7 +225,7 @@ func (cfg *apiConfig) handlerUpdateUser(w http.ResponseWriter, r *http.Request) 
 			CreatedAt: updated_user.CreatedAt,
 			UpdatedAt: updated_user.UpdatedAt,
 			Email: updated_user.Email,
-			Token: token,
+			IsChirpyRed: updated_user.IsChirpyRed,
 		},
 	})
 }
