@@ -29,8 +29,10 @@ func main() {
 	platform := os.Getenv("PLATFORM")
 	// jwt
 	secret := os.Getenv("JWT_SECRET")
+	// polka
+	polkaKey := os.Getenv("POLKA_KEY")
 
-	apiCfg := apiConfig{fileserverHits: atomic.Int32{}, db: dbQueries, platform: platform, jwtSecret: secret}
+	apiCfg := apiConfig{fileserverHits: atomic.Int32{}, db: dbQueries, platform: platform, jwtSecret: secret, polkaKey: polkaKey}
 
 	mux := http.NewServeMux()
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir(filepathRoot)))))

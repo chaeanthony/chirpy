@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/chaeanthony/chirpy/internal/auth"
 	"github.com/google/uuid"
 )
 
@@ -16,6 +17,16 @@ func (cfg *apiConfig) handlerUpgradeUserToRed(w http.ResponseWriter, r *http.Req
 		Data  struct {
 			UserID string `json:"user_id"`
 		} `json:"data"`
+	}
+
+	key, err := auth.GetAPIKey(r.Header)
+	if err != nil {
+		WriteError(w, http.StatusUnauthorized, fmt.Errorf("failed to get ApiKey in header"))
+		return 
+	}
+	if key != cfg.polkaKey {
+		WriteError(w, http.StatusUnauthorized, fmt.Errorf("unauthorized"))
+		return
 	}
 
 	params := parameters{}

@@ -112,3 +112,19 @@ func MakeRefreshToken() (string, error) {
 
 	return hex.EncodeToString(b), nil
 }
+
+func GetAPIKey(headers http.Header) (string, error) {
+	authorization := headers.Get("authorization")
+	if authorization == "" {
+		return "", errors.New("authorization header is empty")
+	}
+
+	parts := strings.SplitN(authorization, " ", 2)
+	if len(parts) != 2 || strings.ToLower(parts[0]) != "apikey" {
+		return "", errors.New("authorization header format must be ApiKey {key}")
+	}
+
+	// Return the API key, trimming any whitespace
+	apiKey := strings.TrimSpace(parts[1])
+	return apiKey, nil
+}
