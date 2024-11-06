@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -111,6 +112,46 @@ func (cfg *apiConfig) handlerGetChirp(w http.ResponseWriter, r *http.Request) {
 		Body: chirp.Body,
 		UserID: chirp.UserID,
 	})
+}
+
+func (cfg *apiConfig) handlerDeleteChirp(w http.ResponseWriter, r *http.Request) {
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		WriteError(w, http.StatusUnauthorized, fmt.Errorf("token required: %v", err))
+		return 
+	}
+	userId, err := auth.ValidateJWT(token, cfg.jwtSecret)
+	if err != nil {
+		WriteError(w, http.StatusUnauthorized, fmt.Errorf("invalid token: %v", err))
+		return 
+	}
+
+	str := r.PathValue("chirpId")
+	chirpId, err := uuid.Parse(str)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, fmt.Errorf("failed to parse chirp id: %v", err))
+		return
+	}
+
+	chirp, err := cfg.db.GetChirpById(r.Context(), chirpId)
+	if err != nil {
+		WriteError(w, http.StatusNotFound, fmt.Errorf("failed to get chirp: %v", err))
+		return 
+	}
+	if chirp.UserID != userId {
+		WriteError(w, http.StatusForbidden, fmt.Errorf("incorrect chirp author"))
+		return 
+	}
+
+	if err := cfg.db.DeleteChirp(r.Context(), chirpId); errors.Is(err, sql.ErrNoRows) {
+		WriteError(w, http.StatusNotFound, fmt.Errorf("chirp not found. got: %v", err))
+		return 
+	} else if err != nil {
+		WriteError(w, http.StatusInternalServerError, fmt.Errorf("failed to delete chirp: %v", err))
+		return 
+	}
+
+	WriteJSON(w, http.StatusNoContent, nil)
 }
 
 
