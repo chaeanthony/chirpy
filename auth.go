@@ -173,3 +173,56 @@ func (cfg *apiConfig) handlerRevoke(w http.ResponseWriter, r *http.Request) {
 
 	WriteJSON(w, http.StatusNoContent, nil)
 }
+
+func (cfg *apiConfig) handlerUpdateUser(w http.ResponseWriter, r *http.Request) {
+	type parameters struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	type response struct {
+		User
+	}
+
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		WriteError(w, http.StatusUnauthorized, fmt.Errorf("token required: %v", err))
+		return 
+	}
+	userId, err := auth.ValidateJWT(token, cfg.jwtSecret)
+	if err != nil {
+		WriteError(w, http.StatusUnauthorized, fmt.Errorf("invalid token: %v", err))
+		return 
+	}
+
+	// decode params to get new email/password from request
+	params := parameters{}
+	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
+		WriteError(w, http.StatusInternalServerError, fmt.Errorf("failed to decode request. expected email, got: %v", err))
+		return
+	}
+
+	pw, err := auth.HashPassword(params.Password)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, fmt.Errorf("failed to hash password: %v", err))
+		return
+	}
+
+	updated_user, err := cfg.db.UpdateUser(r.Context(), database.UpdateUserParams{ID: userId, Email: params.Email, HashedPassword: pw})
+	if errors.Is(err, sql.ErrNoRows) {
+		WriteError(w, http.StatusNotFound, errors.New("failed to find user"))
+		return
+	} else if err != nil {
+		WriteError(w, http.StatusInternalServerError, errors.New("failed to update user"))
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, response{
+		User: User{
+			ID: updated_user.ID,
+			CreatedAt: updated_user.CreatedAt,
+			UpdatedAt: updated_user.UpdatedAt,
+			Email: updated_user.Email,
+			Token: token,
+		},
+	})
+}
