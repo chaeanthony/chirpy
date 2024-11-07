@@ -73,22 +73,39 @@ func (cfg *apiConfig) handlerCreateChirp(w http.ResponseWriter, r *http.Request)
 }
 
 func (cfg *apiConfig) handlerGetChirps(w http.ResponseWriter, r *http.Request) {
-	chirps, err := cfg.db.GetChirps(r.Context())
+	dbChirps, err := cfg.db.GetChirps(r.Context())
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, fmt.Errorf("failed to get chirps: %v", err))
-		return 
-	}
-	
-	resp := make([]Chirp, len(chirps))
-	for i, chirp := range chirps {
-		resp[i].ID = chirp.ID
-		resp[i].CreatedAt = chirp.CreatedAt
-		resp[i].UpdatedAt = chirp.UpdatedAt
-		resp[i].Body = chirp.Body
-		resp[i].UserID = chirp.UserID
+		WriteError(w, http.StatusInternalServerError, fmt.Errorf("couldn't retrieve chirps: %v", err))
+		return
 	}
 
-	WriteJSON(w, http.StatusOK, resp)
+	authorID := uuid.Nil
+	authorIDString := r.URL.Query().Get("author_id")
+	if authorIDString != "" {
+		authorID, err = uuid.Parse(authorIDString)
+		if err != nil {
+			WriteError(w, http.StatusBadRequest, fmt.Errorf("invalid author ID: %v", err))
+			return
+		}
+	}
+
+	chirps := []Chirp{}
+	for _, dbChirp := range dbChirps {
+		// IF there's an author Id, then skip all chirps by users who are not that author
+		if authorID != uuid.Nil && dbChirp.UserID != authorID {
+			continue
+		}
+
+		chirps = append(chirps, Chirp{
+			ID:        dbChirp.ID,
+			CreatedAt: dbChirp.CreatedAt,
+			UpdatedAt: dbChirp.UpdatedAt,
+			UserID:    dbChirp.UserID,
+			Body:      dbChirp.Body,
+		})
+	}
+
+	WriteJSON(w, http.StatusOK, chirps)
 }
 
 func (cfg *apiConfig) handlerGetChirp(w http.ResponseWriter, r *http.Request) {
@@ -154,7 +171,7 @@ func (cfg *apiConfig) handlerDeleteChirp(w http.ResponseWriter, r *http.Request)
 	WriteJSON(w, http.StatusNoContent, nil)
 }
 
-
+// helpers ---------------------------------------------------------
 func validateChirp(body string) (string, error) {
 	const maxChirpLength = 140
 	if len(body) > maxChirpLength {
